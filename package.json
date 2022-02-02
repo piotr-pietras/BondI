@@ -8,9 +8,9 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "^4.3.2",
+    "ganache-cli": "^6.12.2",
     "truffle": "^5.4.11"
   },
-  "devDependencies": {},
   "scripts": {
     "test": "mocha"
   },
