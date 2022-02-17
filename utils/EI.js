@@ -6,6 +6,7 @@ function EI(
   tokenAddress,
   offeringBlocks,
   expireBlocks,
+  id = 1,
   issuedAmount = 500000,
   ethLocked = 10,
   sellRatioEth = 1,
@@ -35,6 +36,7 @@ function EI(
   //----------------------------------------------------------------
   //Bond's specification
   //----------------------------------------------------------------
+  this.id = id;
   this.tokenAddress = tokenAddress;
   this.sellRatio = toWei(sellRatioEth);
   this.buybackRatio = toWei(buybackRatioEth);
@@ -61,6 +63,7 @@ function EI(
   //Issue bond args
   //----------------------------------------------------------------
   this.bondArgs = [
+    this.id,
     this.title,
     this.issuer,
     this.description,

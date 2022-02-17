@@ -5,12 +5,6 @@ const EI = require("../utils/EI");
 const { fromWei, toWei, getBlock, mine, num } = require("../utils/functions");
 
 contract("Bond force resolve ", async (accounts) => {
-  let bondI;
-  let usdc;
-  let blockMiner;
-  let ei;
-  let creationBlock;
-
   before(async () => {
     usdc = await Usdc.deployed();
     bondI = await BondI.deployed();
@@ -24,7 +18,7 @@ contract("Bond force resolve ", async (accounts) => {
     );
 
     await bondI.issueBond(...ei.bondArgs);
-    await bondI.lockEth({ from: ei.issuer, value: toWei(ei.ethLocked) });
+    await bondI.lockEth(ei.id, { from: ei.issuer, value: toWei(ei.ethLocked) });
     for (let i = 1; i < accounts.length; i++) {
       await usdc.transfer(accounts[i], ei.usdcBuyerUnits, { from: ei.owner });
     }
@@ -32,16 +26,20 @@ contract("Bond force resolve ", async (accounts) => {
       await usdc.approve(bondI.address, ei.usdcBuyerUnits, {
         from: accounts[i],
       });
-      await bondI.buyBond(ei.issuer, ei.bondBuyerUnits, { from: accounts[i] });
+      await bondI.buyBond(ei.issuer, ei.id, ei.bondBuyerUnits, {
+        from: accounts[i],
+      });
     }
-    creationBlock = num(await bondI.bondInfo(ei.issuer, "creationBlock"));
+    creationBlock = num(
+      await bondI.bondInfo(ei.issuer, ei.id, "creationBlock")
+    );
   });
 
   describe("End of 'offering' phase...", async () => {
-    let offeringBlocks;
-
     before(async () => {
-      offeringBlocks = num(await bondI.bondInfo(ei.issuer, "offeringBlocks"));
+      offeringBlocks = num(
+        await bondI.bondInfo(ei.issuer, ei.id, "offeringBlocks")
+      );
       const to = creationBlock + offeringBlocks + 1;
       await mine(to, blockMiner);
     });
@@ -57,7 +55,7 @@ contract("Bond force resolve ", async (accounts) => {
         from: ei.testBuyer,
       });
       await bondI
-        .buyBond(ei.issuer, ei.bondBuyerUnits, { from: ei.testBuyer })
+        .buyBond(ei.issuer, ei.id, ei.bondBuyerUnits, { from: ei.testBuyer })
         .catch((err) => (error = err));
       assert.isDefined(error);
     });
@@ -65,17 +63,17 @@ contract("Bond force resolve ", async (accounts) => {
     it("prevents to sell bond in 'usage' phase", async () => {
       let error;
       await bondI
-        .sellBond(ei.issuer, { from: ei.buyer })
+        .sellBond(ei.issuer, ei.id, { from: ei.buyer })
         .catch((err) => (error = err));
       assert.isDefined(error);
     });
   });
 
   describe("End of 'usage' phase...", async () => {
-    let expireBlocks;
-
     before(async () => {
-      expireBlocks = num(await bondI.bondInfo(ei.issuer, "expireBlocks"));
+      expireBlocks = num(
+        await bondI.bondInfo(ei.issuer, ei.id, "expireBlocks")
+      );
       const to = creationBlock + expireBlocks + 1;
       await mine(to, blockMiner);
     });
@@ -87,10 +85,10 @@ contract("Bond force resolve ", async (accounts) => {
 
     it("prevents issuer from peaceful resolve", async () => {
       let error;
-      const due = await bondI.totalDue(ei.issuer);
+      const due = await bondI.totalDue(ei.issuer, ei.id);
       await usdc.approve(bondI.address, due, { from: ei.issuer });
       await bondI
-        .peacefulResolve({ from: ei.issuer })
+        .peacefulResolve(ei.id, { from: ei.issuer })
         .catch((err) => (error = err));
       assert.isDefined(error);
     });
@@ -101,7 +99,7 @@ contract("Bond force resolve ", async (accounts) => {
       const prevBalance = await web3.eth.getBalance(ei.buyer);
       let gasUsed;
       await bondI
-        .sellBond(ei.issuer, { from: ei.buyer })
+        .sellBond(ei.issuer, ei.id, { from: ei.buyer })
         .then((res) => (gasUsed = res.receipt.gasUsed));
       const curBalance = await web3.eth.getBalance(ei.buyer);
 
@@ -112,21 +110,21 @@ contract("Bond force resolve ", async (accounts) => {
     });
 
     it("sets status to 52", async () => {
-      const status = await bondI.bondInfo(ei.issuer, "status");
+      const status = await bondI.bondInfo(ei.issuer, ei.id, "status");
       assert.equal(status, 52);
     });
 
     it("prevents to sell bond again", async () => {
       let error;
       await bondI
-        .sellBond(ei.issuer, { from: ei.buyer })
+        .sellBond(ei.issuer, ei.id, { from: ei.buyer })
         .catch((err) => (error = err));
       assert.isDefined(error);
     });
 
     after(async () => {
       for (let i = ei.reservedAccounts; i < accounts.length; i++) {
-        await bondI.sellBond(ei.issuer, { from: accounts[i] });
+        await bondI.sellBond(ei.issuer, ei.id, { from: accounts[i] });
       }
     });
   });

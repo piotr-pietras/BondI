@@ -4,15 +4,15 @@ const EI = require("../utils/EI");
 const { fromWei, toWei, getBlock, num } = require("../utils/functions");
 
 contract("Issue bond & peacfull resolve", async (accounts) => {
-  let bondI;
-  let usdc;
-  let ei;
-  let creationBlock;
-
   before(async () => {
     usdc = await Usdc.deployed();
     bondI = await BondI.deployed();
-    ei = new EI(accounts, usdc.address, 100, 1000);
+    ei = new EI(
+      accounts,
+      usdc.address,
+      100, //blocks until end of offering
+      1000 //blocks until bond expire
+    );
   });
 
   describe("Preperations...", async () => {
@@ -27,7 +27,9 @@ contract("Issue bond & peacfull resolve", async (accounts) => {
   describe("Issue bond...", async () => {
     it("is a success", async () => {
       const isIssued = await bondI.issueBond(...ei.bondArgs);
-      creationBlock = num(await bondI.bondInfo(ei.issuer, "creationBlock"));
+      creationBlock = num(
+        await bondI.bondInfo(ei.issuer, ei.id, "creationBlock")
+      );
       assert.equal(isIssued.logs[0].event, "BondIssued");
     });
 
@@ -40,14 +42,20 @@ contract("Issue bond & peacfull resolve", async (accounts) => {
 
   describe("Lock Eth...", async () => {
     it("is a success", async () => {
-      await bondI.lockEth({ from: ei.issuer, value: toWei(ei.ethLocked) });
-      const ethLocked = await bondI.ethLocked(ei.issuer);
+      await bondI.lockEth(ei.id, {
+        from: ei.issuer,
+        value: toWei(ei.ethLocked),
+      });
+      const ethLocked = await bondI.ethLocked(ei.issuer, ei.id);
       assert.equal(num(ethLocked), num(toWei(ei.ethLocked)));
     });
 
     it("on existing bond is a success", async () => {
-      await bondI.lockEth({ from: ei.issuer, value: toWei(ei.ethLocked) });
-      const ethLocked = await bondI.ethLocked(ei.issuer);
+      await bondI.lockEth(ei.id, {
+        from: ei.issuer,
+        value: toWei(ei.ethLocked),
+      });
+      const ethLocked = await bondI.ethLocked(ei.issuer, ei.id);
       assert.equal(num(ethLocked), num(toWei(2 * ei.ethLocked)));
     });
   });
@@ -55,27 +63,37 @@ contract("Issue bond & peacfull resolve", async (accounts) => {
   describe("Unlock Eth...", async () => {
     it("before resolve is a failure", async () => {
       let error;
-      await bondI.unlockEth({ from: ei.issuer }).catch((err) => (error = err));
+      await bondI
+        .unlockEth(ei.id, { from: ei.issuer })
+        .catch((err) => (error = err));
       assert.isDefined(error);
     });
   });
 
   describe("Buy bond...", async () => {
     it("1) USDC tokens successfully send to BondI", async () => {
-      await usdc.approve(bondI.address, ei.usdcBuyerUnits, { from: ei.buyer });
-      await bondI.buyBond(ei.issuer, ei.bondBuyerUnits, { from: ei.buyer });
+      await usdc.approve(bondI.address, ei.usdcBuyerUnits, {
+        from: ei.buyer,
+      });
+      await bondI.buyBond(ei.issuer, ei.id, ei.bondBuyerUnits, {
+        from: ei.buyer,
+      });
       const balance = await usdc.balanceOf(bondI.address);
       assert.equal(balance, num(toWei(ei.bondBuyerUnits)));
     });
 
     it("2) untis of bond successfully transfered to buyer", async () => {
-      const units = await bondI.buyers(ei.issuer, ei.buyer);
+      const units = await bondI.buyers(ei.issuer, ei.id, ei.buyer);
       assert.equal(num(units), ei.bondBuyerUnits);
     });
 
     it("3) current amount of bonds units decreased", async () => {
-      const amount = await bondI.bondInfo(ei.issuer, "issuedAmount");
-      const currentAmount = await bondI.bondInfo(ei.issuer, "currentAmount");
+      const amount = await bondI.bondInfo(ei.issuer, ei.id, "issuedAmount");
+      const currentAmount = await bondI.bondInfo(
+        ei.issuer,
+        ei.id,
+        "currentAmount"
+      );
       assert.isBelow(num(currentAmount), num(amount));
     });
 
@@ -85,7 +103,7 @@ contract("Issue bond & peacfull resolve", async (accounts) => {
         await usdc.approve(bondI.address, ei.usdcBuyerUnits, {
           from: accounts[i],
         });
-        await bondI.buyBond(ei.issuer, ei.bondBuyerUnits, {
+        await bondI.buyBond(ei.issuer, ei.id, ei.bondBuyerUnits, {
           from: accounts[i],
         });
       }
@@ -94,7 +112,7 @@ contract("Issue bond & peacfull resolve", async (accounts) => {
 
   describe("Collect capital by issuer...", async () => {
     it("is equel to expected one", async () => {
-      await bondI.collectCapital({ from: ei.issuer });
+      await bondI.collectCapital(ei.id, { from: ei.issuer });
       const balance = await usdc.balanceOf(ei.issuer);
       assert.isAtLeast(num(balance), num(ei.expCapital));
     });
@@ -102,13 +120,15 @@ contract("Issue bond & peacfull resolve", async (accounts) => {
     it("twice is a failure", async () => {
       let error;
       await bondI
-        .collectCapital({ from: ei.issuer })
+        .collectCapital(ei.id, { from: ei.issuer })
         .catch((err) => (error = err));
       assert.isDefined(error);
     });
 
     it("ends 'offering' phase", async () => {
-      const offerBlocks = num(await bondI.bondInfo(ei.issuer, "offerBlocks"));
+      const offerBlocks = num(
+        await bondI.bondInfo(ei.issuer, ei.id, "offerBlocks")
+      );
       const currentBlock = await getBlock();
       assert.isAtLeast(currentBlock, creationBlock + offerBlocks);
     });
@@ -119,7 +139,7 @@ contract("Issue bond & peacfull resolve", async (accounts) => {
         from: ei.testBuyer,
       });
       await bondI
-        .buyBond(ei.issuer, ei.bondBuyerUnits, { from: ei.testBuyer })
+        .buyBond(ei.issuer, ei.id, ei.bondBuyerUnits, { from: ei.testBuyer })
         .catch((err) => (error = err));
       assert.isDefined(error);
       const balance = await usdc.balanceOf(ei.testBuyer);
@@ -128,10 +148,8 @@ contract("Issue bond & peacfull resolve", async (accounts) => {
   });
 
   describe("Peaceful resolve...", async () => {
-    let due;
-
     before(async () => {
-      due = await bondI.totalDue(ei.issuer);
+      due = await bondI.totalDue(ei.issuer, ei.id);
       const balance = await usdc.balanceOf(ei.issuer);
       console.log(`      <?> issuer balance: ${fromWei(balance)} [tokens]`);
       console.log(`      <?> issuer due: ${fromWei(due)} [tokens]`);
@@ -153,19 +171,21 @@ contract("Issue bond & peacfull resolve", async (accounts) => {
     });
 
     it("is a success", async () => {
-      await bondI.peacefulResolve({ from: ei.issuer });
+      await bondI.peacefulResolve(ei.id, { from: ei.issuer });
       const balance = await usdc.balanceOf(bondI.address);
       assert.equal(num(balance), num(ei.expBuyback));
     });
 
     it("sets phase to 'expired'", async () => {
-      const expireBlocks = num(await bondI.bondInfo(ei.issuer, "expireBlocks"));
+      const expireBlocks = num(
+        await bondI.bondInfo(ei.issuer, ei.id, "expireBlocks")
+      );
       const currentBlock = await getBlock();
       assert.isAtLeast(currentBlock, creationBlock + expireBlocks);
     });
 
     it("sets status to 51", async () => {
-      const status = await bondI.bondInfo(ei.issuer, "status");
+      const status = await bondI.bondInfo(ei.issuer, ei.id, "status");
       assert.equal(status, 51);
     });
   });
@@ -173,7 +193,7 @@ contract("Issue bond & peacfull resolve", async (accounts) => {
   describe("Sell bond...", async () => {
     it("is succesful", async () => {
       for (let i = ei.reservedAccounts; i < accounts.length; i++) {
-        await bondI.sellBond(ei.issuer, { from: accounts[i] });
+        await bondI.sellBond(ei.issuer, ei.id, { from: accounts[i] });
         const balance = await usdc.balanceOf(accounts[i]);
         assert.equal(balance, ei.expBuyerBuyback);
       }
@@ -181,7 +201,9 @@ contract("Issue bond & peacfull resolve", async (accounts) => {
 
     it("unlocks issuer's eth", async () => {
       let error;
-      await bondI.unlockEth({ from: ei.issuer }).catch((err) => (error = err));
+      await bondI
+        .unlockEth(ei.id, { from: ei.issuer })
+        .catch((err) => (error = err));
       assert.isUndefined(error);
     });
   });

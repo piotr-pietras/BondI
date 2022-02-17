@@ -5,9 +5,9 @@ port = 7545
 gasPrice = 0
 
 install:
-	make install
+	npm install
 
-test:
+tests:
 	truffle test
 
 run:
