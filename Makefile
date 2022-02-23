@@ -12,3 +12,8 @@ tests:
 
 run:
 	ganache-cli -a $(accounts) -p $(port) -g $(gasPrice)
+
+md: 
+	git add . 
+	git commit -m 'preview' 
+	git push origin feature/to-do
